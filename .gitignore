@@ -1,0 +1,45 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.cache
+*.vs/
+.vs/
+
+# Local DB + app data (shouldn't be committed)
+*.db
+*.db-shm
+*.db-wal
+
+# Build artifacts
+dist/
+publish/
+installer/win/bin/
+installer/win/obj/
+
+# Vendor clones (pinned-at-build-time, never committed)
+vendor/
+
+# Scanner sidecar outputs
+scanner.exe
+scanner
+scanner.app/
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.sln.docstates
+
+# NuGet
+*.nupkg
+packages/
+
+# Python-side venvs if someone runs scanner build locally
+venv/
+__pycache__/
+*.pyc
