@@ -107,15 +107,53 @@
   }
 
   function showMatchesModal(list) {
-    // Phase E placeholder — the full modal lands with the Download
-    // workflow. For now the native handler returns the list and we
-    // just emit it to the console; next commit replaces this with an
-    // actual picker UI.
-    console.info("[shell-strip] matches available:", list);
-    sendToNative({
-      kind: "downloadMatchRequested",
-      matchId: list && list.length ? list[0].id : null,
+    closeMatchesModal();
+    const overlay = document.createElement("div");
+    overlay.id = "ps-shell-matches-overlay";
+    overlay.innerHTML = `
+      <div class="ps-modal">
+        <div class="ps-modal-head">Download match for offline</div>
+        <div class="ps-modal-body"></div>
+        <div class="ps-modal-foot">
+          <button type="button" class="ps-cancel">Cancel</button>
+        </div>
+      </div>
+    `;
+    const body = overlay.querySelector(".ps-modal-body");
+    if (!list || !list.length) {
+      body.innerHTML = `<div class="ps-empty">No matches available on the cloud.</div>`;
+    } else {
+      for (const m of list) {
+        const row = document.createElement("button");
+        row.type = "button";
+        row.className = "ps-match-row";
+        const d = new Date(m.date);
+        const dateStr = isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10);
+        row.innerHTML = `<span class="ps-match-name">${escapeHtml(m.name || "(unnamed match)")}</span>
+                         <span class="ps-match-date">${dateStr}</span>`;
+        row.addEventListener("click", () => {
+          closeMatchesModal();
+          sendToNative({ kind: "downloadMatchRequested", matchId: m.id });
+        });
+        body.appendChild(row);
+      }
+    }
+    overlay.querySelector(".ps-cancel").addEventListener("click", closeMatchesModal);
+    overlay.addEventListener("click", (ev) => {
+      if (ev.target === overlay) closeMatchesModal();
     });
+    document.body.appendChild(overlay);
+  }
+
+  function closeMatchesModal() {
+    const existing = document.getElementById("ps-shell-matches-overlay");
+    if (existing) existing.remove();
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;"
+    })[c]);
   }
 
   function handleNativeMessage(raw) {

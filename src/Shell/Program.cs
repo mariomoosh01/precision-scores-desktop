@@ -1,8 +1,12 @@
 using System.IO;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Photino.NET;
 using PrecisionScoresDesktop.Host;
+using PrecisionScoresDesktop.Host.Data;
+using PrecisionScoresDesktop.Sync;
 using Serilog;
 using Serilog.Extensions.Logging;
 
@@ -14,12 +18,11 @@ namespace PrecisionScoresDesktop.Shell;
 // strip above the WebView.
 internal static class Program
 {
-    // The cloud API root used for connectivity probes AND, in Phase E.3,
-    // for the download sync. Overridable via env var for staging / local
-    // backend testing without rebuilding.
-    private static string CloudHealthUrl =>
-        Environment.GetEnvironmentVariable("PS_CLOUD_HEALTH_URL")
-        ?? "https://mariomoosh-004-site1.anytempurl.com/healthz";
+    // Cloud API roots. Both overridable via env var for staging builds.
+    private static string CloudBaseUrl =>
+        Environment.GetEnvironmentVariable("PS_CLOUD_BASE_URL")
+        ?? "https://mariomoosh-004-site1.anytempurl.com";
+    private static string CloudHealthUrl => CloudBaseUrl.TrimEnd('/') + "/healthz";
 
     [STAThread]
     private static int Main(string[] args)
@@ -63,24 +66,89 @@ internal static class Program
                 .Load(new Uri(OfflineHost.BaseUrl + "/"));
 
             var strip = new StripChannel(window);
-            strip.OnDownloadRequested = () =>
+            var hostCapture = host!;  // local for closures
+
+            async Task<(bool Online, int Pending, DateTime? LastSync)> SnapshotStateAsync()
             {
-                // Phase E.3 will populate this; for now surface a toast
-                // so the roundtrip is observable.
-                strip.SendToast("info", "Download workflow lands with Phase E.3.");
+                await using var scope = hostCapture.Services.CreateAsyncScope();
+                var db = scope.ServiceProvider.GetRequiredService<OfflineDbContext>();
+                var pending = await db.OfflineScorecards.CountAsync(s => s.SyncedAt == null);
+                var lastSync = await db.OfflineScorecards
+                    .Where(s => s.SyncedAt != null)
+                    .OrderByDescending(s => s.SyncedAt)
+                    .Select(s => s.SyncedAt)
+                    .FirstOrDefaultAsync();
+                return (connectivity?.Online ?? false, pending, lastSync);
+            }
+
+            async Task PushStateAsync(bool syncing = false)
+            {
+                var (online, pending, lastSync) = await SnapshotStateAsync();
+                strip.SendState(online, syncing, pending, lastSync);
+            }
+
+            strip.OnDownloadRequested = async () =>
+            {
+                try
+                {
+                    await using var scope = hostCapture.Services.CreateAsyncScope();
+                    var db = scope.ServiceProvider.GetRequiredService<OfflineDbContext>();
+                    var profile = await db.CachedProfiles.FirstOrDefaultAsync();
+                    if (profile is null || string.IsNullOrWhiteSpace(profile.JwtEncrypted))
+                    {
+                        strip.SendToast("error",
+                            "No cached session. Seed CachedProfiles with a JWT first (login flow lands later).");
+                        return;
+                    }
+                    using var cloud = new CloudClient(CloudBaseUrl, profile.JwtEncrypted);
+                    var job = new DownloadMatchJob(cloud, db);
+                    var matches = await job.ListAvailableMatchesAsync(CancellationToken.None);
+                    strip.SendMatches(matches.Select(m =>
+                        new StripChannel.MatchSummary(m.Id, m.Name, m.Date)));
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "ListAvailableMatchesAsync failed");
+                    strip.SendToast("error", "Could not fetch matches: " + ex.Message);
+                }
             };
+
+            strip.OnMatchChosen = async matchId =>
+            {
+                await PushStateAsync(syncing: true);
+                try
+                {
+                    await using var scope = hostCapture.Services.CreateAsyncScope();
+                    var db = scope.ServiceProvider.GetRequiredService<OfflineDbContext>();
+                    var profile = await db.CachedProfiles.FirstOrDefaultAsync();
+                    if (profile is null) return;
+                    using var cloud = new CloudClient(CloudBaseUrl, profile.JwtEncrypted);
+                    var job = new DownloadMatchJob(cloud, db);
+                    await job.DownloadAsync(matchId, CancellationToken.None);
+                    strip.SendToast("info", "Match downloaded for offline use.");
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "DownloadAsync failed for {MatchId}", matchId);
+                    strip.SendToast("error", "Download failed: " + ex.Message);
+                }
+                finally
+                {
+                    await PushStateAsync(syncing: false);
+                }
+            };
+
             strip.OnUploadRequested = () =>
             {
-                strip.SendToast("info", "Upload workflow lands with Phase F.");
+                // Phase F lands this.
+                strip.SendToast("info", "Upload workflow lands next commit.");
             };
-            strip.OnMatchChosen = _ => { /* Phase E.3 */ };
 
             connectivity = new ConnectivityMonitor(CloudHealthUrl);
-            connectivity.OnChanged += online =>
-                strip.SendState(online, syncing: false, pending: 0, lastSyncAt: null);
+            connectivity.OnChanged += _online => _ = PushStateAsync();
             connectivity.Start();
             // Seed the strip immediately — don't wait for the first probe.
-            strip.SendState(online: false, syncing: false, pending: 0, lastSyncAt: null);
+            _ = PushStateAsync();
 
             window.WaitForClose();
             Log.Information("Window closed; shutting down.");
