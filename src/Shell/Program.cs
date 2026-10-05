@@ -14,6 +14,13 @@ namespace PrecisionScoresDesktop.Shell;
 // strip above the WebView.
 internal static class Program
 {
+    // The cloud API root used for connectivity probes AND, in Phase E.3,
+    // for the download sync. Overridable via env var for staging / local
+    // backend testing without rebuilding.
+    private static string CloudHealthUrl =>
+        Environment.GetEnvironmentVariable("PS_CLOUD_HEALTH_URL")
+        ?? "https://mariomoosh-004-site1.anytempurl.com/healthz";
+
     [STAThread]
     private static int Main(string[] args)
     {
@@ -26,6 +33,7 @@ internal static class Program
             .CreateLogger();
 
         WebApplication? host = null;
+        ConnectivityMonitor? connectivity = null;
         try
         {
             Log.Information("Precision Scores Desktop starting. Data dir: {Dir}", AppDataPaths.Root());
@@ -54,6 +62,26 @@ internal static class Program
                 .SetResizable(true)
                 .Load(new Uri(OfflineHost.BaseUrl + "/"));
 
+            var strip = new StripChannel(window);
+            strip.OnDownloadRequested = () =>
+            {
+                // Phase E.3 will populate this; for now surface a toast
+                // so the roundtrip is observable.
+                strip.SendToast("info", "Download workflow lands with Phase E.3.");
+            };
+            strip.OnUploadRequested = () =>
+            {
+                strip.SendToast("info", "Upload workflow lands with Phase F.");
+            };
+            strip.OnMatchChosen = _ => { /* Phase E.3 */ };
+
+            connectivity = new ConnectivityMonitor(CloudHealthUrl);
+            connectivity.OnChanged += online =>
+                strip.SendState(online, syncing: false, pending: 0, lastSyncAt: null);
+            connectivity.Start();
+            // Seed the strip immediately — don't wait for the first probe.
+            strip.SendState(online: false, syncing: false, pending: 0, lastSyncAt: null);
+
             window.WaitForClose();
             Log.Information("Window closed; shutting down.");
             return 0;
@@ -65,6 +93,10 @@ internal static class Program
         }
         finally
         {
+            if (connectivity is not null)
+            {
+                connectivity.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            }
             if (host is not null)
             {
                 try

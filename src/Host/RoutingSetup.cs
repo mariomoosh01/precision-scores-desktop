@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Logging;
 using PrecisionScoresDesktop.Host.Endpoints;
+using PrecisionScoresDesktop.Host.ShellIntegration;
 
 namespace PrecisionScoresDesktop.Host;
 
@@ -40,24 +41,14 @@ internal static class RoutingSetup
 
         if (hasWebBuild)
         {
-            app.UseDefaultFiles();
+            // Shell chrome assets (strip.css/js) served before static
+            // files so they aren't shadowed by any wwwroot/_shell file.
+            app.MapShellStripAssets();
+            // Static assets: JS bundles, images, etc. Index.html is
+            // handled by MapInjectedIndex below so we can splice the
+            // strip tags into <head>.
             app.UseStaticFiles();
-            // SPA fallback: anything that isn't an API path AND isn't a
-            // real static file falls back to /index.html so client-side
-            // routing works for /director/match/dashboard/<guid>, etc.
-            app.MapFallback(async context =>
-            {
-                var fileProvider = app.Environment.WebRootFileProvider;
-                var indexInfo = fileProvider.GetFileInfo("index.html");
-                if (!indexInfo.Exists)
-                {
-                    context.Response.StatusCode = StatusCodes.Status404NotFound;
-                    return;
-                }
-                context.Response.ContentType = "text/html";
-                await using var stream = indexInfo.CreateReadStream();
-                await stream.CopyToAsync(context.Response.Body);
-            });
+            app.MapInjectedIndex();
         }
         else
         {

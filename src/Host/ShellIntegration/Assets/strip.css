@@ -1,0 +1,66 @@
+/*
+ * Status strip rendered above the React UI. Owns the top ~34px of the
+ * viewport. React content below is unaffected (we offset <body> padding
+ * so #root starts after the strip).
+ */
+:root { --strip-height: 34px; }
+
+body {
+  padding-top: var(--strip-height) !important;
+  box-sizing: border-box;
+}
+
+#ps-shell-strip {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: var(--strip-height);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 12px;
+  background: #0b1220;
+  color: #e6e8ef;
+  font: 500 12px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  z-index: 2147483000;
+  border-bottom: 1px solid #1a2237;
+  user-select: none;
+}
+
+#ps-shell-strip .ps-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: #6b7280;
+  transition: background 150ms;
+}
+#ps-shell-strip[data-online="true"] .ps-dot { background: #22c55e; }
+#ps-shell-strip[data-syncing="true"] .ps-dot {
+  background: #f59e0b;
+  animation: ps-pulse 1s infinite alternate;
+}
+@keyframes ps-pulse { from { opacity: 0.5; } to { opacity: 1; } }
+
+#ps-shell-strip .ps-status { color: #e6e8ef; }
+#ps-shell-strip .ps-pending {
+  color: #fbbf24;
+  margin-left: 6px;
+}
+#ps-shell-strip .ps-pending[data-count="0"] { display: none; }
+
+#ps-shell-strip .ps-spacer { flex: 1; }
+
+#ps-shell-strip button {
+  background: #1a2237;
+  color: #e6e8ef;
+  border: 1px solid #273047;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+#ps-shell-strip button:hover:not(:disabled) { background: #273047; }
+#ps-shell-strip button:disabled { opacity: 0.4; cursor: default; }
+
+#ps-shell-strip .ps-last-sync {
+  color: #6b7280;
+  font-size: 11px;
+  margin-left: 8px;
+}
