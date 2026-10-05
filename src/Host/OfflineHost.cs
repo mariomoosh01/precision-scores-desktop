@@ -49,6 +49,12 @@ public static class OfflineHost
         builder.Services.AddDbContext<OfflineDbContext>(opt =>
             opt.UseSqlite($"Data Source={options.DatabasePath}"));
 
+        // Scanner proxy — Shell flips Enabled=true once the sidecar is
+        // confirmed healthy. Until then /match/scan-multi returns 503
+        // and the browser's opencv.js fallback runs.
+        builder.Services.AddSingleton(new ScannerProxy.ScannerConfig());
+        builder.Services.AddHttpClient<ScannerProxy>();
+
         // Routes get added in Phase D — Startup extension method.
         builder.Services.AddRoutingAndEndpoints();
 

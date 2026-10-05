@@ -26,6 +26,15 @@
              Link="wwwroot\%(RecursiveDir)%(Filename)%(Extension)"
              CopyToOutputDirectory="PreserveNewest"
              CopyToPublishDirectory="PreserveNewest" />
+    <!-- Scanner sidecar (PyInstaller-built scanner binary + mnist.onnx)
+         produced by build/scanner.sh|.ps1. Copied to bin/scanner/ so the
+         Shell can launch it with Process.Start. Missing glob = scanner
+         sidecar disabled, /match/scan-multi returns 503, frontend
+         opencv.js fallback runs. -->
+    <Content Include="..\..\vendor\scanner\**\*"
+             Link="scanner\%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <PropertyGroup>

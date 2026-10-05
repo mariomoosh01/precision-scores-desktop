@@ -25,7 +25,7 @@ public static class MatchEndpoints
         app.MapGet("/match/GetRegisteredShooters", GetRegisteredShooters);
         app.MapPost("/match/SaveScoreCard", SaveScoreCard);
         app.MapPut("/match/EditScoreCard", EditScoreCard);
-        app.MapPost("/match/scan-multi", ScanMultiStub);
+        app.MapPost("/match/scan-multi", ScanMulti);
         return app;
     }
 
@@ -152,11 +152,28 @@ public static class MatchEndpoints
         return Results.Ok(new { id = row.Id });
     }
 
-    // Phase G will proxy this to the bundled scanner.exe. Until then,
-    // return the same error shape the frontend expects on scanner outage
-    // so its opencv.js fallback kicks in.
-    private static IResult ScanMultiStub()
-        => Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+    // Proxies the browser's multipart upload through to the bundled
+    // scanner sidecar (ScannerProxy owns the HttpClient + host details
+    // registered by DI). On any failure returns 503 so the browser's
+    // opencv.js fallback runs.
+    private static async Task<IResult> ScanMulti(
+        HttpContext http,
+        ScannerProxy proxy,
+        CancellationToken ct)
+    {
+        if (!proxy.IsAvailable)
+        {
+            return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+        }
+        try
+        {
+            return await proxy.ForwardAsync(http.Request, ct);
+        }
+        catch
+        {
+            return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+        }
+    }
 
     private static async Task<Guid> ResolveMatchIdAsync(
         OfflineDbContext db, Guid eventId, CancellationToken ct)

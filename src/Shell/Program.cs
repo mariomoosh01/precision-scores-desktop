@@ -1,4 +1,5 @@
 using System.IO;
+using System.Security.Cryptography;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -6,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using Photino.NET;
 using PrecisionScoresDesktop.Host;
 using PrecisionScoresDesktop.Host.Data;
+using PrecisionScoresDesktop.Scanner;
 using PrecisionScoresDesktop.Sync;
 using Serilog;
 using Serilog.Extensions.Logging;
@@ -37,6 +39,7 @@ internal static class Program
 
         WebApplication? host = null;
         ConnectivityMonitor? connectivity = null;
+        ScannerProcess? scanner = null;
         try
         {
             Log.Information("Precision Scores Desktop starting. Data dir: {Dir}", AppDataPaths.Root());
@@ -53,6 +56,52 @@ internal static class Program
             ).GetAwaiter().GetResult();
             Log.Information("Local host listening on {Url}; db at {Db}; wwwroot {WebRoot} (exists={Exists})",
                 OfflineHost.BaseUrl, AppDataPaths.DatabaseFile(), webRoot, Directory.Exists(webRoot));
+
+            // Scanner sidecar — ship-and-forget. Spawn it in the
+            // background; the ScannerProxy config stays Disabled until
+            // the sidecar replies to /healthz, at which point the
+            // /match/scan-multi endpoint starts working. If the binary
+            // isn't present (dev build without `build/scanner.sh`),
+            // we skip silently and rely on the frontend opencv.js
+            // fallback.
+            var scannerBinName = OperatingSystem.IsWindows() ? "scanner.exe" : "scanner";
+            var scannerBin = Path.Combine(AppContext.BaseDirectory, "scanner", scannerBinName);
+            var mnistPath = Path.Combine(AppContext.BaseDirectory, "scanner", "mnist.onnx");
+            if (File.Exists(scannerBin))
+            {
+                var apiKey = Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
+                scanner = new ScannerProcess(new ScannerProcess.ScannerOptions(
+                    ExecutablePath: scannerBin,
+                    MnistPath: mnistPath,
+                    ApiKey: apiKey));
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        var ready = await scanner.StartAsync();
+                        if (ready)
+                        {
+                            var cfg = host!.Services.GetRequiredService<ScannerProxy.ScannerConfig>();
+                            cfg.BaseUrl = scanner.BaseUrl;
+                            cfg.ApiKey = apiKey;
+                            cfg.Enabled = true;
+                            Log.Information("Scanner sidecar ready at {Url}", scanner.BaseUrl);
+                        }
+                        else
+                        {
+                            Log.Warning("Scanner sidecar failed to become ready in time");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Warning(ex, "Scanner sidecar startup failed");
+                    }
+                });
+            }
+            else
+            {
+                Log.Warning("Scanner binary not found at {Path} — scan-multi will 503 (opencv.js fallback)", scannerBin);
+            }
 
             // The Photino window loads the React UI from the local
             // Kestrel. Static files (if built), API endpoints, SPA
@@ -213,6 +262,11 @@ internal static class Program
         }
         finally
         {
+            if (scanner is not null)
+            {
+                try { scanner.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+                catch (Exception ex) { Log.Warning(ex, "Error stopping scanner sidecar"); }
+            }
             if (connectivity is not null)
             {
                 connectivity.DisposeAsync().AsTask().GetAwaiter().GetResult();
