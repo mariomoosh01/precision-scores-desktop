@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Windows installer for Precision Scores Desktop.
+    Builds a .msi via `dotnet wix build`. See build/installer.ps1.
+
+    Code-signing (Authenticode) is OUT OF SCOPE for v1 — unsigned
+    installers will show the SmartScreen warning on first run.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+    <Package Name="Precision Scores Desktop"
+             Manufacturer="Precision Scores"
+             Version="0.1.0.0"
+             UpgradeCode="4a2f1b3c-8e5d-4a6b-9f3e-1d7c5e2a4b8f"
+             Compressed="yes"
+             InstallerVersion="500"
+             Scope="perMachine">
+
+        <!-- Automatic upgrade: previous versions get uninstalled on
+             install of a newer version. -->
+        <MajorUpgrade DowngradeErrorMessage="A newer version of Precision Scores Desktop is already installed." />
+
+        <MediaTemplate EmbedCab="yes" />
+
+        <!-- Install under C:\Program Files\PrecisionScoresDesktop -->
+        <StandardDirectory Id="ProgramFiles64Folder">
+            <Directory Id="INSTALLFOLDER" Name="PrecisionScoresDesktop" />
+        </StandardDirectory>
+
+        <!-- Start Menu shortcut folder -->
+        <StandardDirectory Id="ProgramMenuFolder">
+            <Directory Id="StartMenuFolder" Name="Precision Scores" />
+        </StandardDirectory>
+
+        <Feature Id="MainFeature" Title="Precision Scores Desktop" Level="1">
+            <ComponentGroupRef Id="PublishedFiles" />
+            <ComponentRef Id="ApplicationShortcut" />
+        </Feature>
+
+        <!-- Start Menu entry pointing at the Shell exe. -->
+        <Component Id="ApplicationShortcut"
+                   Directory="StartMenuFolder"
+                   Guid="7e6b1c8d-3f4a-4b2c-9d5e-8a7f6b1c2d3e">
+            <Shortcut Id="AppStartMenuShortcut"
+                      Name="Precision Scores"
+                      Description="Offline-capable scorecard scanning"
+                      Target="[INSTALLFOLDER]PrecisionScoresDesktop.Shell.exe"
+                      WorkingDirectory="INSTALLFOLDER" />
+            <RemoveFolder Id="RemoveStartMenuFolder" On="uninstall" />
+            <RegistryValue Root="HKCU"
+                           Key="Software\PrecisionScores\Desktop"
+                           Name="installed"
+                           Type="integer"
+                           Value="1"
+                           KeyPath="yes" />
+        </Component>
+
+        <!-- WixUI_InstallDir gives Next/Back wizard with a path chooser. -->
+        <ui:WixUI Id="WixUI_InstallDir" />
+        <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+    </Package>
+</Wix>

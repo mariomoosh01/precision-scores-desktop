@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>Precision Scores</string>
+    <key>CFBundleDisplayName</key>
+    <string>Precision Scores</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.precisionscores.desktop</string>
+    <key>CFBundleVersion</key>
+    <string>0.1.0</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleExecutable</key>
+    <string>PrecisionScoresDesktop.Shell</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>11.0</string>
+    <!-- WKWebView needs these when the embedded React UI calls getUserMedia
+         or imports a photo from the gallery. Shown to the user on first prompt. -->
+    <key>NSCameraUsageDescription</key>
+    <string>Precision Scores needs camera access to scan scorecards.</string>
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>Precision Scores needs photo-library access to import scorecard images.</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <!-- The React UI talks to http://127.0.0.1:34567. Allow HTTP on
+             localhost without disabling ATS globally. -->
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
+</dict>
+</plist>
