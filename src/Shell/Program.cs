@@ -138,14 +138,66 @@ internal static class Program
                 }
             };
 
-            strip.OnUploadRequested = () =>
+            async Task RunUploadAsync(string trigger)
             {
-                // Phase F lands this.
-                strip.SendToast("info", "Upload workflow lands next commit.");
-            };
+                await PushStateAsync(syncing: true);
+                try
+                {
+                    await using var scope = hostCapture.Services.CreateAsyncScope();
+                    var db = scope.ServiceProvider.GetRequiredService<OfflineDbContext>();
+                    var profile = await db.CachedProfiles.FirstOrDefaultAsync();
+                    if (profile is null || string.IsNullOrWhiteSpace(profile.JwtEncrypted))
+                    {
+                        strip.SendToast("error", "No cached session — can't upload.");
+                        return;
+                    }
+                    using var cloud = new CloudClient(CloudBaseUrl, profile.JwtEncrypted);
+                    var job = new UploadScorecardsJob(cloud, db);
+                    Log.Information("Upload starting ({Trigger})", trigger);
+                    var report = await job.RunAsync();
+                    Log.Information("Upload done: {Uploaded}/{Total} ok, {Failed} failed ({Trigger})",
+                        report.Uploaded, report.Total, report.Failed, trigger);
+                    if (report.Total == 0)
+                    {
+                        strip.SendToast("info", "Nothing to upload.");
+                    }
+                    else if (report.Failed == 0)
+                    {
+                        strip.SendToast("info", $"Uploaded {report.Uploaded} card{(report.Uploaded == 1 ? "" : "s")}.");
+                    }
+                    else
+                    {
+                        strip.SendToast("error",
+                            $"Uploaded {report.Uploaded} of {report.Total}; {report.Failed} still pending.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "Upload failed ({Trigger})", trigger);
+                    strip.SendToast("error", "Upload failed: " + ex.Message);
+                }
+                finally
+                {
+                    await PushStateAsync(syncing: false);
+                }
+            }
+
+            strip.OnUploadRequested = () => _ = RunUploadAsync("manual");
 
             connectivity = new ConnectivityMonitor(CloudHealthUrl);
-            connectivity.OnChanged += _online => _ = PushStateAsync();
+            connectivity.OnChanged += online =>
+            {
+                _ = PushStateAsync();
+                // Auto-trigger upload when connectivity returns AND we
+                // have pending rows. Fire-and-forget; RunUploadAsync
+                // handles its own errors + state updates.
+                if (!online) return;
+                _ = Task.Run(async () =>
+                {
+                    var (_, pending, _) = await SnapshotStateAsync();
+                    if (pending > 0) await RunUploadAsync("auto-reconnect");
+                });
+            };
             connectivity.Start();
             // Seed the strip immediately — don't wait for the first probe.
             _ = PushStateAsync();
