@@ -24,40 +24,52 @@ public static class ProfileEndpoints
         return app;
     }
 
+    // Default profile returned when no CachedProfiles row exists. Keeps
+    // the React app's auth guard happy without a real cloud login — the
+    // desktop app treats the local machine as single-user and trusted.
+    // Cloud auth is a *separate* concern owned by the Photino shell (for
+    // the sync agent's /match/GetAllMatches + SaveScoreCard calls).
+    //
+    // Fields match what the frontend's JWTAuth reader splats onto the
+    // user context: profileId, email, firstName, lastName, isMatchDirector.
+    // ProfileId is deterministic (zero-guid) so repeat launches look
+    // like the same user to any UI code that keys on it.
+    private const string DefaultOfflineProfileJson =
+        "{\"profileId\":\"00000000-0000-0000-0000-000000000000\"," +
+        "\"email\":\"offline@local\"," +
+        "\"firstName\":\"Offline\"," +
+        "\"lastName\":\"User\"," +
+        "\"isMatchDirector\":true}";
+
+    private const string DefaultOfflineJwt = "offline-no-cloud-jwt";
+
     private static async Task<IResult> Authenticate(
         AuthenticateRequest req,
         OfflineDbContext db,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(req.Email))
-        {
-            return Results.BadRequest(new { error = "email required" });
-        }
+        // If a real cloud session is cached (user signed in via the
+        // shell), prefer that. Otherwise accept the login attempt
+        // unconditionally and hand back the default offline profile —
+        // the local machine is single-user, so password verification
+        // isn't meaningful here.
+        var profile = string.IsNullOrWhiteSpace(req.Email)
+            ? await db.CachedProfiles.FirstOrDefaultAsync(ct)
+            : await db.CachedProfiles.FirstOrDefaultAsync(p => p.Email == req.Email, ct);
 
-        var profile = await db.CachedProfiles
-            .FirstOrDefaultAsync(p => p.Email == req.Email, ct);
+        var (jwt, profileJson) = profile is null
+            ? (DefaultOfflineJwt, DefaultOfflineProfileJson)
+            : (profile.JwtEncrypted, profile.DataJson);
 
-        if (profile is null)
-        {
-            // No cached session for this email — the user needs to log
-            // in online at least once before using the desktop app.
-            return Results.Unauthorized();
-        }
-
-        // Return the shape the frontend's JWTAuth expects: a JWT token
-        // + the profile fields. The profile JSON we cached includes
-        // these fields already — the frontend splats them.
-        return Results.Content(
-            BuildAuthResponse(profile.JwtEncrypted, profile.DataJson),
-            "application/json");
+        return Results.Content(BuildAuthResponse(jwt, profileJson), "application/json");
     }
 
     private static async Task<IResult> GetMe(OfflineDbContext db, CancellationToken ct)
     {
         var profile = await db.CachedProfiles.FirstOrDefaultAsync(ct);
-        return profile is null
-            ? Results.Unauthorized()
-            : Results.Content(profile.DataJson, "application/json");
+        return Results.Content(
+            profile?.DataJson ?? DefaultOfflineProfileJson,
+            "application/json");
     }
 
     private static string BuildAuthResponse(string jwt, string profileJson)
