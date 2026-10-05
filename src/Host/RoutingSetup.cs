@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Logging;
+using PrecisionScoresDesktop.Host.Endpoints;
 
 namespace PrecisionScoresDesktop.Host;
 
@@ -24,7 +25,10 @@ internal static class RoutingSetup
         //    middleware can't block the probe.
         app.MapGet("/healthz", () => Results.Ok(new { ok = true, service = "offline-host" }));
 
-        // 2. Phase D endpoints get mapped here (next commit).
+        // 2. API endpoints — must be mapped before static-file fallback
+        //    so they aren't shadowed by MapFallback → index.html.
+        app.MapMatchEndpoints();
+        app.MapProfileEndpoints();
 
         // 3. Static-file serving for the embedded React build. If
         //    wwwroot doesn't exist (first-time dev checkout without
