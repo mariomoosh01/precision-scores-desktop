@@ -34,48 +34,25 @@ internal static class Program
             // so the React UI's first XHR against the base URL doesn't
             // race the server coming up.
             Directory.CreateDirectory(AppDataPaths.Root());
+            var webRoot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
             host = OfflineHost.StartAsync(new OfflineHost.Options(
                 DatabasePath: AppDataPaths.DatabaseFile(),
+                WebRootPath: webRoot,
                 LoggerProvider: new SerilogLoggerProvider(Log.Logger, dispose: false))
             ).GetAwaiter().GetResult();
-            Log.Information("Local host listening on {Url}; db at {Db}", OfflineHost.BaseUrl, AppDataPaths.DatabaseFile());
+            Log.Information("Local host listening on {Url}; db at {Db}; wwwroot {WebRoot} (exists={Exists})",
+                OfflineHost.BaseUrl, AppDataPaths.DatabaseFile(), webRoot, Directory.Exists(webRoot));
 
+            // The Photino window loads the React UI from the local
+            // Kestrel. Static files (if built), API endpoints, SPA
+            // fallback — all served from one origin, no CORS.
             var window = new PhotinoWindow()
                 .SetTitle("Precision Scores")
                 .SetUseOsDefaultSize(false)
                 .SetSize(1280, 800)
                 .Center()
                 .SetResizable(true)
-                // Phase B placeholder — the embedded React build gets wired in Phase C.
-                .LoadRawString("""
-                    <!doctype html>
-                    <html>
-                      <head>
-                        <meta charset="utf-8" />
-                        <title>Precision Scores Desktop</title>
-                        <style>
-                          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-                                 background: #0b1220; color: #e6e8ef; margin: 0; padding: 48px;
-                                 display: flex; align-items: center; justify-content: center;
-                                 height: 100vh; box-sizing: border-box; }
-                          .card { max-width: 560px; }
-                          h1 { font-size: 28px; margin: 0 0 12px; }
-                          p { color: #9aa3b2; line-height: 1.5; }
-                          code { background: #1a2237; padding: 2px 6px; border-radius: 4px; }
-                        </style>
-                      </head>
-                      <body>
-                        <div class="card">
-                          <h1>Precision Scores Desktop</h1>
-                          <p>Phase A scaffold. The React UI, local Kestrel, and scanner sidecar
-                             will be wired in by Phase C.</p>
-                          <p>Logs: <code>%LOCALAPPDATA%\PrecisionScoresDesktop\logs\</code>
-                             (Windows) or <code>~/Library/Application Support/PrecisionScoresDesktop/logs/</code>
-                             (macOS).</p>
-                        </div>
-                      </body>
-                    </html>
-                    """);
+                .Load(new Uri(OfflineHost.BaseUrl + "/"));
 
             window.WaitForClose();
             Log.Information("Window closed; shutting down.");

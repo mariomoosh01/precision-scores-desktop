@@ -15,6 +15,19 @@
     <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- React UI, produced by build/web.sh into vendor/web/app/. Each
+         file is copied into the Shell's bin output under wwwroot/ so
+         Kestrel's static-file middleware can serve it as /. If the
+         vendor dir doesn't exist yet (first checkout), the glob is
+         empty and the build still succeeds; Shell logs a warning at
+         startup and the Photino window shows a placeholder page. -->
+    <Content Include="..\..\vendor\web\app\**\*"
+             Link="wwwroot\%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>

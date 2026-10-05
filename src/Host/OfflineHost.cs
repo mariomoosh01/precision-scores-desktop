@@ -21,7 +21,10 @@ public static class OfflineHost
     public const int Port = 34567;
     public const string BaseUrl = "http://127.0.0.1:34567";
 
-    public sealed record Options(string DatabasePath, ILoggerProvider? LoggerProvider = null);
+    public sealed record Options(
+        string DatabasePath,
+        string? WebRootPath = null,
+        ILoggerProvider? LoggerProvider = null);
 
     public static async Task<WebApplication> StartAsync(Options options, CancellationToken ct = default)
     {
@@ -30,6 +33,7 @@ public static class OfflineHost
             // The slim builder skips configuration/env loading we don't
             // need in a desktop context.
             ApplicationName = "PrecisionScoresDesktop.Host",
+            WebRootPath = options.WebRootPath,
         });
 
         builder.WebHost.ConfigureKestrel(opt =>
